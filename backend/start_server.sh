@@ -1,37 +1,69 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
 # Mualleem Backend Server Startup Script
+#
+# Usage:
+#   ./start_server.sh
+#
+# Behavior:
+# - Ensures .env exists
+# - Ensures data directory exists
+# - Ensures dependencies are installed in backend/.venv (if present) or system Python
+# - Runs core RAG tests (non-fatal on failure)
+# - Starts Uvicorn with autoreload
 
 echo "🚀 Starting Mualleem Backend Server..."
 echo ""
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null 2>&1 && pwd)"
+cd "${SCRIPT_DIR}"
+
 # Check if .env file exists
-if [ ! -f .env ]; then
-    echo "⚠️  Warning: .env file not found!"
-    echo "Please create .env file with your OPENAI_API_KEY"
+if [[ ! -f .env ]]; then
+    echo "⚠️  Warning: backend/.env file not found!"
+    echo "Please create backend/.env with the required Requesty/Qdrant configuration."
     exit 1
-fi
-
-# Check if OpenAI API key is set
-if grep -q "your_openai_api_key_here" .env; then
-    echo "⚠️  Warning: Please set your actual OPENAI_API_KEY in .env file"
-    echo ""
-fi
-
-# Check if dependencies are installed
-if ! python3 -c "import fastapi" 2>/dev/null; then
-    echo "📦 Installing dependencies..."
-    python3 -m pip install -r requirements.txt --user
-    echo ""
 fi
 
 # Create data directory if it doesn't exist
 mkdir -p data
 
-# Run the test suite first
-echo "🧪 Running RAG service tests..."
-python3 test_rag.py
+# Recreate virtualenv to ensure it's not corrupted
+VENV_DIR="${SCRIPT_DIR}/.venv"
+if [[ -d "${VENV_DIR}" ]]; then
+    echo "🗑️ Removing existing virtualenv..."
+    rm -rf "${VENV_DIR}"
+fi
+
+echo "🐍 Creating new virtualenv..."
+python3 -m venv "${VENV_DIR}"
+# shellcheck disable=SC1091
+source "${VENV_DIR}/bin/activate"
 echo ""
+
+# Ensure pip is available
+if ! python3 -m pip --version &>/dev/null 2>&1; then
+    echo "🐍 pip not found. Installing/upgrading pip..."
+    python3 -m ensurepip --upgrade
+    echo ""
+fi
+
+# Ensure dependencies are installed
+if ! python3 -c "import fastapi" &>/dev/null 2>&1; then
+    echo "📦 Installing backend dependencies from requirements.txt..."
+    python3 -m pip install -r requirements.txt
+    echo ""
+fi
+
+# Run the RAG tests (non-fatal if they fail, but warn)
+if [[ -f test_rag.py ]]; then
+    echo "🧪 Running RAG service tests (non-blocking)..."
+    if ! python3 test_rag.py; then
+        echo "⚠️  Warning: test_rag.py reported issues. Check output above."
+    fi
+    echo ""
+fi
 
 # Start the server
 echo "✅ Starting FastAPI server on http://localhost:8000"

@@ -82,7 +82,7 @@ class RAGService:
                 self.client.create_collection(
                     collection_name=COLLECTION_NAME,
                     vectors_config=VectorParams(
-                        size=1536,  # text-embedding-3-small dimension
+                        size=3072,  # text-embedding-3-large dimension
                         distance=Distance.COSINE
                     ),
                 )
@@ -159,7 +159,11 @@ class RAGService:
     
     def generate_embeddings(self, texts: List[str]) -> List[List[float]]:
         """
-        Generate embeddings using OpenAI's embedding model via Requesty.ai
+        Generate embeddings using OpenAI-compatible Requesty.ai gateway.
+        
+        This function uses the `openai/text-embedding-3-large` model exposed
+        via Requesty.ai, and is the single entry point for all embedding
+        generation in the RAG service.
         
         Args:
             texts: List of text chunks to embed
@@ -172,12 +176,12 @@ class RAGService:
         
         try:
             response = openai_client.embeddings.create(
-                model="openai/text-embedding-3-small",  # Requesty format: provider/model
-                input=texts
+                model="openai/text-embedding-3-large",  # Requesty format: provider/model
+                input=texts,
             )
             
             embeddings = [item.embedding for item in response.data]
-            print(f"✓ Generated {len(embeddings)} embeddings via Requesty.ai")
+            print(f"✓ Generated {len(embeddings)} embeddings via Requesty.ai using openai/text-embedding-3-large")
             return embeddings
             
         except Exception as e:
@@ -267,16 +271,17 @@ class RAGService:
             # Generate embedding for the query
             query_embedding = self.generate_embeddings([query])[0]
             
-            # Query Qdrant Cloud
-            results = self.client.search(
+            # Query Qdrant Cloud using query_points API (correct modern API)
+            response = self.client.query_points(
                 collection_name=COLLECTION_NAME,
-                query_vector=query_embedding,
-                limit=n_results
+                query=query_embedding,
+                limit=n_results,
+                with_payload=True,
             )
             
-            # Format results
+            # Format results - query_points returns QueryResponse with points attribute
             context_chunks = []
-            for hit in results:
+            for hit in response.points:
                 context_chunks.append({
                     "text": hit.payload["text"],
                     "metadata": {
@@ -344,10 +349,16 @@ rag_service = RAGService()
 
 def get_openai_client() -> OpenAI:
     """
-    Get the configured OpenAI client instance
+    Get the configured OpenAI-compatible client instance used via Requesty.ai.
+    
+    This client is initialized at module import time using:
+      - REQUESTY_API_KEY
+      - REQUESTY_BASE_URL (default: https://router.requesty.ai/v1)
+    
+    It no longer depends on OPENAI_API_KEY directly.
     
     Returns:
-        OpenAI client
+        OpenAI client (Requesty.ai gateway)
     """
     return openai_client
 

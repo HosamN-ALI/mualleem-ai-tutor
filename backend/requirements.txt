@@ -8,3 +8,5 @@ python-dotenv==1.0.1
 langchain==0.1.6
 langchain-openai==0.0.5
 tiktoken==0.5.2
+psutil==5.9.6
+requests==2.31.0
