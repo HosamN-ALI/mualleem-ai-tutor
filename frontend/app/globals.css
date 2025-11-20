@@ -30,8 +30,70 @@ body {
 .katex-display {
   margin: 1em 0;
   text-align: center;
+  direction: ltr;
 }
 
 .katex {
   font-size: 1.1em;
+  direction: ltr;
+}
+
+/* RTL improvements */
+.rtl-flip {
+  transform: scaleX(-1);
+}
+
+.rtl-margin-fix {
+  margin-right: auto;
+  margin-left: 0;
+}
+
+/* Improve Arabic text rendering */
+body {
+  font-feature-settings: "liga", "kern";
+  text-rendering: optimizeLegibility;
+}
+
+/* Better RTL chat bubble alignment */
+.chat-bubble-user {
+  margin-right: 0;
+  margin-left: auto;
+}
+
+.chat-bubble-assistant {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+/* Touch-friendly improvements for mobile */
+@media (max-width: 640px) {
+  .touch-friendly {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  .text-responsive {
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  
+  /* Better spacing for Arabic text on mobile */
+  .arabic-text {
+    letter-spacing: 0.02em;
+    word-spacing: 0.1em;
+  }
+}
+
+/* Loading animation improvements */
+.loading-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: .5;
+  }
 }

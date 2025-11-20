@@ -13,16 +13,18 @@ def test_rag_service():
     print("🧪 Testing RAG Service for Mualleem Platform")
     print("=" * 60)
     
-    # Test 1: Check OpenAI client
-    print("\n1️⃣ Testing OpenAI Client Setup...")
+    # Test 1: Check Requesty/OpenAI-compatible client
+    print("\n1️⃣ Testing Requesty/OpenAI Client Setup via Requesty.ai...")
     try:
         client = get_openai_client()
-        api_key = os.getenv("OPENAI_API_KEY")
-        if api_key and api_key != "your_openai_api_key_here":
-            print("   ✓ OpenAI client initialized successfully")
-            print(f"   ✓ API Key configured: {api_key[:10]}...")
+        requesty_api_key = os.getenv("REQUESTY_API_KEY")
+        requesty_base_url = os.getenv("REQUESTY_BASE_URL", "https://router.requesty.ai/v1")
+        if requesty_api_key:
+            print("   ✓ Requesty API key configured")
+            print(f"   ✓ REQUESTY_API_KEY prefix: {requesty_api_key[:10]}...")
+            print(f"   ✓ REQUESTY_BASE_URL: {requesty_base_url}")
         else:
-            print("   ⚠️  Warning: OpenAI API key not configured in .env file")
+            print("   ⚠️  Warning: REQUESTY_API_KEY not configured in .env file")
     except Exception as e:
         print(f"   ✗ Error: {str(e)}")
     
@@ -79,9 +81,9 @@ def test_rag_service():
     print("✅ RAG Service Test Complete!")
     print("=" * 60)
     print("\n📝 Next Steps:")
-    print("   1. Make sure OPENAI_API_KEY is set in .env file")
-    print("   2. Upload a PDF curriculum using POST /upload-curriculum")
-    print("   3. Test chat endpoint with POST /chat")
+    print("   1. تأكد من ضبط REQUESTY_API_KEY و REQUESTY_BASE_URL في ملف .env")
+    print("   2. ارفع ملف PDF للمنهج باستخدام POST /upload-curriculum")
+    print("   3. اختبر واجهة الدردشة باستخدام POST /chat")
     print("\n")
 
 if __name__ == "__main__":

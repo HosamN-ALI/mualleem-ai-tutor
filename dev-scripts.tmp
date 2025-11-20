@@ -1,0 +1,379 @@
+#!/usr/bin/env bash
+# Temporary aggregation file – will be split into individual scripts by the assistant.
+# This file is not meant to be executed.
+
+### START: start-dev.sh
+### FILE: start-dev.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+# start-dev.sh - Start both backend and frontend development servers
+#
+# Usage:
+#   ./start-dev.sh
+#
+# Behavior:
+# - Starts backend FastAPI server using backend/start_server.sh in one terminal/session
+# - Starts frontend Next.js dev server (npm run dev) in another background process
+# - Shows logs for both and forwards Ctrl+C to clean up child processes
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+BACKEND_DIR="${ROOT_DIR}/backend"
+FRONTEND_DIR="${ROOT_DIR}/frontend"
+
+echo "🚀 Starting Mualleem full development environment"
+echo
+
+# Ensure backend/start_server.sh is executable
+if [[ ! -x "${BACKEND_DIR}/start_server.sh" ]]; then
+  echo "🔧 Making backend/start_server.sh executable"
+  chmod +x "${BACKEND_DIR}/start_server.sh"
+fi
+
+# Start backend
+echo "📡 Starting backend (FastAPI on http://localhost:8000)..."
+(
+  cd "${BACKEND_DIR}"
+  ./start_server.sh
+) &
+BACKEND_PID=$!
+
+# Start frontend
+echo
+echo "🖥  Starting frontend (Next.js dev on http://localhost:3000)..."
+(
+  cd "${FRONTEND_DIR}"
+  npm install >/dev/null 2>&1 || true
+  npm run dev
+) &
+FRONTEND_PID=$!
+
+echo
+echo "✅ Backend PID:  ${BACKEND_PID}"
+echo "✅ Frontend PID: ${FRONTEND_PID}"
+echo
+echo "Logs will stream here. Press Ctrl+C to stop both servers."
+
+cleanup() {
+  echo
+  echo "🛑 Stopping development servers..."
+  if kill -0 "${FRONTEND_PID}" 2>/dev/null; then
+    echo "  - Stopping frontend (PID ${FRONTEND_PID})"
+    kill "${FRONTEND_PID}" 2>/dev/null || true
+  fi
+  if kill -0 "${BACKEND_PID}" 2>/dev/null; then
+    echo "  - Stopping backend (PID ${BACKEND_PID})"
+    kill "${BACKEND_PID}" 2>/dev/null || true
+  fi
+  wait >/dev/null 2>&1 || true
+  echo "👋 Done."
+}
+
+trap cleanup INT TERM
+
+wait
+### END: start-dev.sh
+
+### START: test-all.sh
+### FILE: test-all.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+# test-all.sh - Run all backend and frontend tests
+#
+# Usage:
+#   ./test-all.sh
+#
+# Behavior:
+# - Runs Python backend tests (basic health + RAG + Qdrant + Requesty)
+# - Runs frontend lint (and can be extended with jest/playwright later)
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+BACKEND_DIR="${ROOT_DIR}/backend"
+FRONTEND_DIR="${ROOT_DIR}/frontend"
+
+echo "🧪 Running full test suite for Mualleem"
+echo
+
+# --- Backend tests ---
+echo "🧪 [Backend] Running Python tests..."
+(
+  cd "${BACKEND_DIR}"
+  # Ensure dependencies are available
+  python3 -m pip install -r requirements.txt --user >/dev/null 2>&1 || true
+
+  # Run available test scripts if present
+  [[ -f test_qdrant.py ]] && echo "➡ test_qdrant.py" && python3 test_qdrant.py
+  [[ -f test_requesty.py ]] && echo "➡ test_requesty.py" && python3 test_requesty.py
+  [[ -f test_rag.py ]] && echo "➡ test_rag.py" && python3 test_rag.py
+)
+echo
+
+# --- Frontend tests / lint ---
+if [[ -d "${FRONTEND_DIR}" ]]; then
+  echo "🧪 [Frontend] Running npm lint (and tests, if added)..."
+  (
+    cd "${FRONTEND_DIR}"
+    npm install >/dev/null 2>&1 || true
+
+    if npm run | grep -q "lint"; then
+      npm run lint
+    else
+      echo "ℹ️  No 'lint' script found in frontend/package.json, skipping lint."
+    fi
+  )
+else
+  echo "ℹ️  Frontend directory not found; skipping frontend tests."
+fi
+
+echo
+echo "✅ All available tests completed."
+### END: test-all.sh
+
+### START: setup-dev.sh
+### FILE: setup-dev.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+# setup-dev.sh - One-time or repeatable development environment setup
+#
+# Usage:
+#   ./setup-dev.sh
+#
+# Behavior:
+# - Sets up Python virtual environment in backend/.venv (if not already)
+# - Installs backend Python dependencies
+# - Installs frontend npm packages
+# - Performs basic sanity checks
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+BACKEND_DIR="${ROOT_DIR}/backend"
+FRONTEND_DIR="${ROOT_DIR}/frontend"
+VENV_DIR="${BACKEND_DIR}/.venv"
+
+echo "⚙️  Setting up Mualleem development environment"
+echo
+
+# --- Backend: Python virtualenv and dependencies ---
+echo "🐍 Setting up backend (Python/FastAPI)..."
+mkdir -p "${BACKEND_DIR}"
+
+if [[ ! -d "${VENV_DIR}" ]]; then
+  echo "🔧 Creating virtual environment at backend/.venv"
+  python3 -m venv "${VENV_DIR}"
+fi
+
+# shellcheck disable=SC1091
+source "${VENV_DIR}/bin/activate"
+
+echo "📦 Installing backend dependencies from requirements.txt..."
+pip install --upgrade pip >/dev/null
+pip install -r "${BACKEND_DIR}/requirements.txt"
+
+echo "✅ Backend setup complete."
+echo
+
+# --- Frontend: npm packages ---
+if [[ -d "${FRONTEND_DIR}" ]]; then
+  echo "🖥  Setting up frontend (Next.js/Node)..."
+  cd "${FRONTEND_DIR}"
+  npm install
+  echo "✅ Frontend dependencies installed."
+else
+  echo "ℹ️  Frontend directory not found; skipping frontend setup."
+fi
+
+echo
+echo "✅ Development environment setup complete."
+echo "Next steps:"
+echo "  1) Configure backend/.env as documented."
+echo "  2) Run ./start-dev.sh to start both servers."
+### END: setup-dev.sh
+
+### START: update-deps.sh
+### FILE: update-deps.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+# update-deps.sh - Update backend and frontend dependencies
+#
+# Usage:
+#   ./update-deps.sh
+#
+# Behavior:
+# - Upgrades Python packages from requirements.txt inside backend/.venv
+# - Runs `npm update` in frontend and refreshes package-lock.json
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+BACKEND_DIR="${ROOT_DIR}/backend"
+FRONTEND_DIR="${ROOT_DIR}/frontend"
+VENV_DIR="${BACKEND_DIR}/.venv"
+
+echo "⬆️  Updating project dependencies"
+echo
+
+# --- Backend: Python dependencies ---
+if [[ -d "${BACKEND_DIR}" && -f "${BACKEND_DIR}/requirements.txt" ]]; then
+  echo "🐍 Updating backend Python dependencies..."
+  if [[ ! -d "${VENV_DIR}" ]]; then
+    echo "🔧 Creating virtual environment at backend/.venv"
+    python3 -m venv "${VENV_DIR}"
+  fi
+  # shellcheck disable=SC1091
+  source "${VENV_DIR}/bin/activate"
+  pip install --upgrade pip
+  pip install --upgrade -r "${BACKEND_DIR}/requirements.txt"
+  echo "✅ Backend Python dependencies updated."
+else
+  echo "ℹ️  backend/requirements.txt not found; skipping backend deps."
+fi
+
+echo
+
+# --- Frontend: npm dependencies ---
+if [[ -d "${FRONTEND_DIR}" ]]; then
+  echo "🖥  Updating frontend npm packages..."
+  cd "${FRONTEND_DIR}"
+  npm install
+  npm update || echo "⚠️  npm update encountered issues; check output above."
+  echo "✅ Frontend npm dependencies processed."
+else
+  echo "ℹ️  Frontend directory not found; skipping frontend deps."
+fi
+
+echo
+echo "✅ Dependency update process finished."
+### END: update-deps.sh
+
+### START: backup-config.sh
+### FILE: backup-config.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+# backup-config.sh - Backup important configuration files
+#
+# Usage:
+#   ./backup-config.sh [backup-directory]
+#
+# Behavior:
+# - Creates a timestamped backup directory under ./backups or a user-provided path
+# - Copies key configuration files:
+#     - backend/.env
+#     - backend/requirements.txt
+#     - frontend/package.json
+#     - frontend/package-lock.json
+#     - top-level *.md documentation index files (optional context)
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+BACKEND_DIR="${ROOT_DIR}/backend"
+FRONTEND_DIR="${ROOT_DIR}/frontend"
+
+TARGET_ROOT="${1:-${ROOT_DIR}/backups}"
+TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+BACKUP_DIR="${TARGET_ROOT}/config-backup-${TIMESTAMP}"
+
+mkdir -p "${BACKUP_DIR}"
+
+echo "💾 Backing up configuration files to:"
+echo "   ${BACKUP_DIR}"
+echo
+
+# Backend config
+if [[ -f "${BACKEND_DIR}/.env" ]]; then
+  echo "📁 Saving backend/.env"
+  cp "${BACKEND_DIR}/.env" "${BACKUP_DIR}/backend.env"
+else
+  echo "ℹ️  backend/.env not found; skipping."
+fi
+
+if [[ -f "${BACKEND_DIR}/requirements.txt" ]]; then
+  echo "📁 Saving backend/requirements.txt"
+  cp "${BACKEND_DIR}/requirements.txt" "${BACKUP_DIR}/backend.requirements.txt"
+fi
+
+# Frontend config
+if [[ -d "${FRONTEND_DIR}" ]]; then
+  if [[ -f "${FRONTEND_DIR}/package.json" ]]; then
+    echo "📁 Saving frontend/package.json"
+    cp "${FRONTEND_DIR}/package.json" "${BACKUP_DIR}/frontend.package.json"
+  fi
+
+  if [[ -f "${FRONTEND_DIR}/package-lock.json" ]]; then
+    echo "📁 Saving frontend/package-lock.json"
+    cp "${FRONTEND_DIR}/package-lock.json" "${BACKUP_DIR}/frontend.package-lock.json"
+  fi
+else
+  echo "ℹ️  frontend/ not found; skipping frontend configs."
+fi
+
+echo
+echo "✅ Backup complete."
+echo "Backup directory: ${BACKUP_DIR}"
+### END: backup-config.sh
+
+### START: backend/start_server.sh (updated)
+### FILE: backend/start_server.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Mualleem Backend Server Startup Script
+#
+# Usage:
+#   ./start_server.sh
+#
+# Behavior:
+# - Ensures .env exists
+# - Ensures data directory exists
+# - Ensures dependencies are installed in backend/.venv
+# - Runs core RAG tests (optional, non-fatal on failure)
+# - Starts Uvicorn with autoreload
+
+echo "🚀 Starting Mualleem Backend Server..."
+echo
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+cd "${SCRIPT_DIR}"
+
+# Check if .env file exists
+if [[ ! -f .env ]]; then
+  echo "⚠️  Warning: backend/.env file not found!"
+  echo "Please create backend/.env with the required Requesty/Qdrant configuration."
+  exit 1
+fi
+
+# Create data directory if it doesn't exist
+mkdir -p data
+
+# Use local virtualenv if present; otherwise fall back to system Python
+VENV_DIR="${SCRIPT_DIR}/.venv"
+if [[ -d "${VENV_DIR}" ]]; then
+  # shellcheck disable=SC1091
+  source "${VENV_DIR}/bin/activate"
+fi
+
+# Ensure dependencies are installed
+if ! python3 -c "import fastapi" >/dev/null 2>&1; then
+  echo "📦 Installing backend dependencies from requirements.txt..."
+  python3 -m pip install -r requirements.txt
+  echo
+fi
+
+# Run the RAG tests (non-fatal if they fail, but warn)
+if [[ -f test_rag.py ]]; then
+  echo "🧪 Running RAG service tests (non-blocking)..."
+  if ! python3 test_rag.py; then
+    echo "⚠️  Warning: test_rag.py reported issues. Check output above."
+  fi
+  echo
+fi
+
+# Start the server
+echo "✅ Starting FastAPI server on http://localhost:8000"
+echo "📚 API Documentation: http://localhost:8000/docs"
+echo "📖 ReDoc:            http://localhost:8000/redoc"
+echo
+echo "Press Ctrl+C to stop the server"
+echo
+
+python3 -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+### END: backend/start_server.sh
