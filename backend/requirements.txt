@@ -10,3 +10,4 @@ langchain-openai==0.0.5
 tiktoken==0.5.2
 psutil==5.9.6
 requests==2.31.0
+supabase==2.3.4

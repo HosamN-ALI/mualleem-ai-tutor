@@ -10,10 +10,18 @@ from collections import defaultdict
 import time
 import logging
 from performance_monitor import perf_monitor, monitor_endpoint
+from typing import Optional
+from pydantic import BaseModel, Field
+from supabase import create_client, Client
 
 load_dotenv()
 
 app = FastAPI(title="Mualleem API", version="1.0.0")
+
+# Initialize Supabase client
+supabase_url = os.getenv("VITE_SUPABASE_URL")
+supabase_key = os.getenv("VITE_SUPABASE_SUPABASE_ANON_KEY")
+supabase: Client = create_client(supabase_url, supabase_key)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -185,8 +193,6 @@ async def upload_curriculum(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"خطأ في معالجة الملف: {str(e)}")
 
-from typing import Optional
-
 @app.post("/chat")
 @monitor_endpoint("/chat")
 async def chat(
@@ -317,6 +323,127 @@ async def chat(
     except Exception as e:
         logger.error(f"Unexpected error in chat endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail="خطأ في معالجة السؤال. يرجى المحاولة مرة أخرى")
+
+class ReviewSubmission(BaseModel):
+    session_id: str = Field(..., description="Client-side session identifier")
+    question: str = Field(..., description="Original question asked")
+    answer: str = Field(..., description="AI-generated answer")
+    rating: int = Field(..., ge=1, le=5, description="Rating from 1-5 stars")
+    feedback: Optional[str] = Field(None, description="Optional text feedback")
+    model_used: Optional[str] = Field(None, description="AI model used")
+    context_used: bool = Field(False, description="Whether curriculum context was used")
+    user_id: Optional[str] = Field(None, description="Optional user ID for authenticated users")
+
+class ReviewResponse(BaseModel):
+    id: str
+    rating: int
+    feedback: Optional[str]
+    created_at: str
+    message: str
+
+@app.post("/reviews", response_model=ReviewResponse)
+async def submit_review(review: ReviewSubmission):
+    """
+    Submit a review and rating for an AI response
+    Allows both anonymous and authenticated users to provide feedback
+    """
+    try:
+        # Prepare review data
+        review_data = {
+            "session_id": review.session_id,
+            "question": review.question,
+            "answer": review.answer,
+            "rating": review.rating,
+            "feedback": review.feedback,
+            "model_used": review.model_used,
+            "context_used": review.context_used,
+            "user_id": review.user_id
+        }
+
+        # Insert into Supabase
+        result = supabase.table("reviews").insert(review_data).execute()
+
+        if not result.data:
+            raise HTTPException(status_code=500, detail="فشل في حفظ التقييم")
+
+        review_record = result.data[0]
+
+        return ReviewResponse(
+            id=review_record["id"],
+            rating=review_record["rating"],
+            feedback=review_record.get("feedback"),
+            created_at=review_record["created_at"],
+            message="تم إرسال التقييم بنجاح. شكراً لملاحظاتك!"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error submitting review: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"خطأ في إرسال التقييم: {str(e)}")
+
+@app.get("/reviews/stats")
+async def get_review_stats():
+    """
+    Get aggregated statistics about reviews
+    Returns total reviews, average rating, and rating distribution
+    """
+    try:
+        # Get all reviews
+        result = supabase.table("reviews").select("rating").execute()
+
+        if not result.data:
+            return {
+                "total_reviews": 0,
+                "average_rating": 0,
+                "rating_distribution": {str(i): 0 for i in range(1, 6)}
+            }
+
+        reviews = result.data
+        total_reviews = len(reviews)
+
+        # Calculate average rating
+        total_rating = sum(r["rating"] for r in reviews)
+        average_rating = round(total_rating / total_reviews, 2) if total_reviews > 0 else 0
+
+        # Calculate rating distribution
+        rating_distribution = {str(i): 0 for i in range(1, 6)}
+        for review in reviews:
+            rating_str = str(review["rating"])
+            rating_distribution[rating_str] += 1
+
+        return {
+            "total_reviews": total_reviews,
+            "average_rating": average_rating,
+            "rating_distribution": rating_distribution
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching review stats: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"خطأ في جلب إحصائيات التقييمات: {str(e)}")
+
+@app.get("/reviews/recent")
+async def get_recent_reviews(limit: int = 10):
+    """
+    Get recent reviews with feedback
+    Returns the most recent reviews that include text feedback
+    """
+    try:
+        result = supabase.table("reviews") \
+            .select("id, rating, feedback, created_at, model_used") \
+            .not_.is_("feedback", "null") \
+            .order("created_at", desc=True) \
+            .limit(limit) \
+            .execute()
+
+        return {
+            "reviews": result.data,
+            "count": len(result.data)
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching recent reviews: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"خطأ في جلب التقييمات الأخيرة: {str(e)}")
 
 @app.on_event("shutdown")
 async def save_performance_report():
